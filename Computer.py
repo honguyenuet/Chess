@@ -9,18 +9,6 @@ import random
 logger = Logger()
 
 
-class MinimaxResult:
-    def __init__(self):
-        self.moves = []
-        self.score = -math.inf
-
-    def update(self, piece, move, score):
-        if score > self.score:
-            self.score = score
-            self.moves = [[piece, move, score]]
-        elif score == self.score:
-            self.moves.append([piece, move, score])
-            
 def log_tree(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -41,70 +29,67 @@ def write_to_file(board: Board, current_depth):
 
 
 @log_tree
-def minimax(board, depth, alpha, beta, max_player, save_move, result=None, ai_color=None):
-    if result is None:
-        result = MinimaxResult()
-    if ai_color is None:
-        ai_color = 'black'  # Lưu màu AI tại gốc cây
+def minimax(board, depth, alpha, beta, max_player, save_move, data):
 
     if depth == 0 or board.is_terminal():
-        result.score = board.evaluate()
-        return result
+        data[1] = board.evaluate()
+        return data
 
     if max_player:
         max_eval = -math.inf
         for i in range(8):
             for j in range(8):
-                piece = board[i][j]
-                if isinstance(piece, ChessPiece) and piece.color == ai_color:
+                if isinstance(board[i][j], ChessPiece) and board[i][j].color != board.get_player_color():
+                    piece = board[i][j]
                     moves = piece.filter_moves(piece.get_moves(board), board)
                     for move in moves:
                         board.make_move(piece, move[0], move[1], keep_history=True)
-                        evaluation = minimax(board, depth - 1, alpha, beta, False, False, None, ai_color).score
-                        board.unmake_move(piece)
-
+                        evaluation = minimax(board, depth - 1, alpha, beta, False, False, data)[1]
                         if save_move:
-                            result.update(piece, move, evaluation)
-
+                            if evaluation >= max_eval:
+                                if evaluation > data[1]:
+                                    data.clear()
+                                    data[1] = evaluation
+                                    data[0] = [piece, move, evaluation]
+                                elif evaluation == data[1]:
+                                    data[0].append([piece, move, evaluation])
+                        board.unmake_move(piece)
                         max_eval = max(max_eval, evaluation)
                         alpha = max(alpha, evaluation)
                         if beta <= alpha:
                             break
-        result.score = max_eval
+        return data
     else:
         min_eval = math.inf
         for i in range(8):
             for j in range(8):
-                piece = board[i][j]
-                if isinstance(piece, ChessPiece) and piece.color != ai_color:
-                    moves = piece.filter_moves(piece.get_moves(board), board)
+                if isinstance(board[i][j], ChessPiece) and board[i][j].color == board.get_player_color():
+                    piece = board[i][j]
+                    moves = piece.get_moves(board)
                     for move in moves:
                         board.make_move(piece, move[0], move[1], keep_history=True)
-                        evaluation = minimax(board, depth - 1, alpha, beta, True, False, None, ai_color).score
+                        evaluation = minimax(board, depth - 1, alpha, beta, True, False, data)[1]
                         board.unmake_move(piece)
-
                         min_eval = min(min_eval, evaluation)
                         beta = min(beta, evaluation)
                         if beta <= alpha:
                             break
-        result.score = min_eval
-
-    return result
+        return data
 
 
 def get_ai_move(board):
-    result = minimax(board, board.depth, -math.inf, math.inf, True, True)
+    moves = minimax(board, board.depth, -math.inf, math.inf, True, True, [[], 0])
     if board.log:
         logger.write()
-
-    if not result.moves:
+    # moves = [[pawn, move, move_score], [..], [..],[..], total_score]
+    if len(moves[0]) == 0:
         return False
-
-    best_score = result.score
-    candidates = [m for m in result.moves if m[2] == best_score]
-    piece, move, _ = random.choice(candidates)
-
-    board.make_move(piece, move[0], move[1])
+    best_score = max(moves[0], key=lambda x: x[2])[2]
+    piece_and_move = random.choice([move for move in moves[0] if move[2] == best_score])
+    piece = piece_and_move[0]
+    move = piece_and_move[1]
+    if isinstance(piece, ChessPiece) and len(move) > 0 and isinstance(move, tuple):
+        board.make_move(piece, move[0], move[1])
     return True
 
 
